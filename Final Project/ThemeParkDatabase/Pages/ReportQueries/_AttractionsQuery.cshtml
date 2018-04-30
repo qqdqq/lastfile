@@ -1,0 +1,288 @@
+﻿@model ThemeParkDatabase.ViewModels.AttractionsQuery
+@using ThemeParkDatabase.Models;
+@using ViewModels
+
+@{   
+    var query = Model.ReportQuery;
+    var filteredAttractions = Model.Attractions;
+
+    // Filter attractions
+
+    if (query.AttractionName != "All")
+    {
+        filteredAttractions = filteredAttractions
+            .Where(fa => fa.Name == query.AttractionName)
+            .ToList();
+        if (filteredAttractions.Count() == 0)
+        {
+            <p>@query.AttractionTypeId</p>
+
+        }
+    }
+
+    if (query.LocationId != 0)
+    {
+        filteredAttractions = filteredAttractions
+            .Where(fa => fa.LocationId == query.LocationId)
+            .ToList();
+    }
+
+    if (query.AttractionTypeId != 0)
+    {
+        filteredAttractions = filteredAttractions
+            .Where(fa => fa.AttractionTypeId == query.AttractionTypeId)
+            .ToList();
+    }
+
+    // Create an AttractionReport for each queried attraction
+    var attractionReports = new List<AttractionReport>();
+    foreach (var attraction in filteredAttractions)
+    {
+        //Get visit/ popularity stats
+        int totalVisits = 0;
+        double averageVisits = 0;
+        int highestVisits = 0;
+        var highestVisitsDate = new DateTime();
+        int lowestVisits = 0;
+        var lowestVisitsDate = new DateTime();
+
+        var attractionVisits = attraction.AttractionVisit
+            .Where(av => (av.Time >= query.StartDate) && (av.Time <= query.EndDate))
+            .OrderBy(av => av.Time)
+            .ToList();
+
+        if (attractionVisits.Count() != 0)
+        {
+            totalVisits = attractionVisits.Count();
+
+            var firstVisit = attractionVisits.FirstOrDefault();
+            var lastVisit = attractionVisits.LastOrDefault();
+            averageVisits = totalVisits / ((lastVisit.Time - firstVisit.Time).TotalDays + 1);
+
+            lowestVisits = Int32.MaxValue;
+            for (var iter = firstVisit.Time; iter.Date <= lastVisit.Time; iter = iter.AddDays(1))
+            {
+                var numVisits = attractionVisits
+                    .Count(v => (v.Time >= iter) && (v.Time < iter.AddDays(1)));
+
+                if (numVisits > highestVisits)
+                {
+                    highestVisits = numVisits;
+                    highestVisitsDate = iter;
+                }
+                if (numVisits < lowestVisits)
+                {
+                    lowestVisits = numVisits;
+                    lowestVisitsDate = iter;
+                }
+            }
+        }
+
+        // Get maintenance stats
+        int numMaintenanceRequests = 0;
+        int daysBroken = 0;
+        decimal maintenanceCosts = 0.00m;
+
+        var maintenanceRequests = attraction.MaintenanceRequest
+            .Where(mr => (mr.DateRequested >= query.StartDate) && (mr.DateRequested <= query.EndDate))
+            .OrderBy(mr => mr.DateRequested)
+            .ToList();
+
+        numMaintenanceRequests = maintenanceRequests.Count();
+
+        foreach (var maintenanceRequest in maintenanceRequests)
+        {
+
+            if (maintenanceRequest.DateResolved != null)
+            {
+                daysBroken += ((DateTime)maintenanceRequest.DateResolved - maintenanceRequest.DateRequested).Days; // Don't know how the rounding works
+            }
+            else
+            {
+                daysBroken += (query.EndDate - maintenanceRequest.DateRequested).Days;
+            }
+
+            maintenanceCosts += maintenanceRequest.EstimatedCost;
+        }
+
+        attractionReports.Add(new AttractionReport()
+        {
+            Name = attraction.Name,
+            TotalVisits = totalVisits,
+            AverageVisits = averageVisits,
+            HighestVisits = highestVisits,
+            HigestVisitsDate = highestVisitsDate,
+            LowestVisits = lowestVisits,
+            LowestVisitsDate = lowestVisitsDate,
+            NumMaintenanceRequests = numMaintenanceRequests,
+            DaysBroken = daysBroken,
+            MaintenanceCosts = maintenanceCosts
+        });
+    }
+
+    // Calculate the global report
+    int gTotalVisits = 0;
+    double gAverageVisits = 0;
+    foreach (var attractionReport in attractionReports)
+    {
+        gTotalVisits += attractionReport.TotalVisits;
+        gAverageVisits += attractionReport.AverageVisits;
+    }
+
+    int gHighestVisits = 0;
+    var gHighestVisitsDate = new DateTime();
+    int gLowestVisits = 0;
+    var gLowestVisitsDate = new DateTime();
+    if (attractionReports.FirstOrDefault() != null)
+    {
+        gHighestVisits = attractionReports.FirstOrDefault().HighestVisits;
+        gHighestVisitsDate = attractionReports.FirstOrDefault().HigestVisitsDate;
+        gLowestVisits = attractionReports.FirstOrDefault().LowestVisits;
+        gLowestVisitsDate = attractionReports.FirstOrDefault().LowestVisitsDate;
+        foreach (var attractionReport in attractionReports)
+        {
+            if (attractionReport.HighestVisits > gHighestVisits)
+            {
+                gHighestVisits = attractionReport.HighestVisits;
+                gHighestVisitsDate = attractionReport.HigestVisitsDate;
+            }
+            if (attractionReport.LowestVisits < gLowestVisits)
+            {
+                gLowestVisits = attractionReport.LowestVisits;
+                gLowestVisitsDate = attractionReport.LowestVisitsDate;
+            }
+        }
+    }
+
+    int gNumMaintenanceRequests = 0;
+    int gDaysBroken = 0;
+    decimal gMaintenanceCosts = 0.0m;
+    foreach (var attractionReport in attractionReports)
+    {
+        gNumMaintenanceRequests += attractionReport.NumMaintenanceRequests;
+        gDaysBroken += attractionReport.DaysBroken;
+        gMaintenanceCosts = attractionReport.MaintenanceCosts;
+    }
+
+    var globalReport = new AttractionReport()
+    {
+        Name = "All",
+        TotalVisits = gTotalVisits,
+        AverageVisits = gAverageVisits,
+        HighestVisits = gHighestVisits,
+        HigestVisitsDate = gHighestVisitsDate,
+        LowestVisits = gLowestVisits,
+        LowestVisitsDate = gLowestVisitsDate,
+        NumMaintenanceRequests = gNumMaintenanceRequests,
+        DaysBroken = gDaysBroken,
+        MaintenanceCosts = gMaintenanceCosts
+    };
+}
+
+<div class="report-header">
+    @query.StartDate.ToShortDateString() - @query.EndDate.ToShortDateString()
+</div>
+
+@{
+    foreach (var report in attractionReports)
+    {
+        <div class="report-body">
+            <h3>@report.Name</h3>
+            <p>Total visits: @report.TotalVisits</p>
+            <p>Average visits: @String.Format("{0:0.00}", report.AverageVisits)</p>
+            <p>Highest visits: @report.HighestVisits on @report.HigestVisitsDate.ToShortDateString()</p>
+            <p>Lowest visits: @report.LowestVisits on @report.LowestVisitsDate.ToShortDateString()</p>
+            <p>Number of maintenance requests: @report.NumMaintenanceRequests</p>
+            <p>Days inactive: @report.DaysBroken</p>
+            <p>Maintenance costs: $@report.MaintenanceCosts</p>
+            </div>
+    }
+}
+
+<div class="report-body">
+<h3>@globalReport.Name</h3>
+    <p>Total visits: @globalReport.TotalVisits</p>
+    <p>Average visits: @String.Format("{0:0.00}", globalReport.AverageVisits)</p>
+    <p>Highest visits: @globalReport.HighestVisits on @globalReport.HigestVisitsDate.ToShortDateString()</p>
+    <p>Lowest visits: @globalReport.LowestVisits on @globalReport.LowestVisitsDate.ToShortDateString()</p>
+    <p>Number of maintenance requests: @globalReport.NumMaintenanceRequests</p>
+    <p>Days inactive: @globalReport.DaysBroken</p>
+    <p>Maintenance costs: $@globalReport.MaintenanceCosts</p>
+</div>
+
+@*@model ThemeParkDatabase.ViewModels.AttractionsQuery
+@using ThemeParkDatabase.Models;
+
+@{
+    List<Attraction> attractions = Model.Attractions.ToList();
+    if (Model.ReportQuery.AttractionName != "All")
+    {
+        attractions = attractions.Where(a => a.Name == Model.ReportQuery.AttractionName).ToList();
+
+    }
+    if (Model.ReportQuery.AttractionTypeId != -1)
+    {
+        attractions = attractions.Where(a => a.AttractionTypeId == Model.ReportQuery.AttractionTypeId).ToList();
+    }
+    if (Model.ReportQuery.LocationId != -1)
+    {
+        attractions = attractions.Where(a => a.LocationId == Model.ReportQuery.LocationId).ToList();
+
+    }
+
+    @:<div class="report">
+    foreach (var attraction in attractions)
+    {
+        List<AttractionVisit> visits = attraction.AttractionVisit
+            .Where(a => (a.Time >= Model.ReportQuery.StartDate) && (a.Time <= Model.ReportQuery.EndDate))
+            .OrderBy(a => a.Time)
+            .ToList();
+
+        @:<div>
+            <h4>@attraction.Name</h4>
+
+            <p>Total visits:@visits.Count()</p>
+
+            var firstDate = visits.First().Time;
+            var lastDate = visits.Last().Time;
+            var avgVisits = visits.Count() / (lastDate - firstDate).TotalDays;
+            <p>Average visits: @avgVisits.ToString("0.00")</p>
+
+            var highest = 0;
+            var highestDate = new DateTime();
+            var lowest = 9999999; // yea yea yea
+            var lowestDate = new DateTime();
+            for (DateTime iter = firstDate; iter.Date <= lastDate.Date; iter = iter.AddDays(1))
+            {
+                var visitCount = visits.Where(v => (v.Time >= iter) && (v.Time < iter.AddDays(1))).Count();
+
+                if (visitCount > highest)
+                {
+                    highestDate = iter;
+                    highest = visitCount;
+                }
+                if (visitCount < lowest)
+                {
+                    lowestDate = iter;
+                    lowest = visitCount;
+                }
+            }
+            <p>Highest count: @highest on @highestDate.ToString("MM/dd/yyyy")</p> // Can't get format right
+            <p>Lowest count: @lowest on @lowestDate.ToString("MM/dd/yyyy")</p>
+
+            var numBrokenDown = attraction.MaintenanceRequest.Count();
+            <p>Number maintenance requests: @numBrokenDown</p>
+
+            double totalMaintenanceCost = 0;
+            foreach (var request in attraction.MaintenanceRequest)
+            {
+                totalMaintenanceCost += (double)request.EstimatedCost;
+
+            }
+            <p>Maintenance Cost: $@totalMaintenanceCost</p>
+        @:</div>
+
+    }
+    @:</div>
+}
+*@

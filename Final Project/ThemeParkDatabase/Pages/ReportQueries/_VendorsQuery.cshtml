@@ -1,0 +1,161 @@
+﻿@model ThemeParkDatabase.ViewModels.VendorsQuery
+@using ThemeParkDatabase.Models;
+@using ViewModels
+
+@{
+    var query = Model.ReportQuery;
+    var filteredVendors = Model.Vendors;
+
+    // Filter vendors
+    if (query.LocationId != 0)
+    {
+        filteredVendors = filteredVendors
+            .Where(fa => fa.LocationId == query.LocationId)
+            .ToList();
+    }
+
+    if (query.VendorTypeId != 0)
+    {
+        filteredVendors = filteredVendors
+            .Where(fa => fa.VendorTypeId == query.VendorTypeId)
+            .ToList();
+    }
+
+    if (query.VendorName != "All")
+    {
+        filteredVendors = filteredVendors
+            .Where(fa => fa.Name == query.VendorName)
+            .ToList();
+    }
+
+    // Calculate all reports for filtered vendors
+    var vendorReports = new List<VendorReport>();
+    foreach (var vendor in filteredVendors)
+    {
+        var totalSales = new decimal();
+        var totalSalesGoal = new decimal();
+
+        var salesReports = vendor.VendorSalesReport
+            .Where(sr => (sr.Date >= query.StartDate) && (sr.Date <= query.EndDate))
+            .ToList();
+
+        foreach (var salesReport in salesReports)
+        {
+            totalSales += salesReport.TotalSales;
+            totalSalesGoal += salesReport.SalesGoal;
+        }
+
+        var profit = totalSales - totalSalesGoal;
+        var profitMargin = (double)(totalSales / totalSalesGoal) * 100.0;
+
+        vendorReports.Add(new VendorReport()
+        {
+            Name = vendor.Name,
+            TotalSales = totalSales,
+            TotalSalesGoals = totalSalesGoal,
+            Profit = profit,
+            ProfitMargin = profitMargin
+        });
+    }
+
+    // Global report
+    decimal gTotalSales = 0.00m;
+    decimal gTotalSalesGoal = 0.00m;
+    foreach (var vendorReport in vendorReports)
+    {
+        gTotalSales += vendorReport.TotalSales;
+        gTotalSalesGoal += vendorReport.TotalSalesGoals;
+    }
+
+    var gProfit = gTotalSales - gTotalSalesGoal;
+    double gProfitMargin = 0.00;
+    if (gTotalSalesGoal != 0) // Don't divide by zero
+    {
+        gProfitMargin = (double)(gTotalSales / gTotalSalesGoal) * 100.00;
+    }
+
+    var globalReport = new VendorReport()
+    {
+        TotalSales = gTotalSales,
+        TotalSalesGoals = gTotalSalesGoal,
+        Profit = gProfit,
+        ProfitMargin = gProfitMargin
+    };
+}
+
+<div class="report-header">
+    @query.StartDate.ToShortDateString() - @query.EndDate.ToShortDateString()
+</div>
+
+@{ 
+    foreach(var report in vendorReports)
+    {
+        <div class="report-body">
+            <h3>@report.Name</h3>
+            <p>Total sales: $@report.TotalSales</p>
+            <p>Sales goals: $@report.TotalSalesGoals</p>
+            <p>Profit: $@report.Profit</p>
+        </div>
+    }
+}
+
+<div class="report-body">
+    <h3>All</h3>
+    <p>Total sales: $@globalReport.TotalSales</p>
+    <p>Sales goals: $@globalReport.TotalSalesGoals</p>
+    <p>Profit: $@globalReport.Profit</p>
+</div>
+
+@*@model ThemeParkDatabase.ViewModels.VendorsQuery
+    @using ThemeParkDatabase.Models;
+
+    @{
+        @:<div class="report">
+            List<Vendor> vendors = Model.Vendors.ToList();
+        if (Model.ReportQuery.LocationId != -1)
+        {
+            //vendors = vendors.Where(v => v.LocationId == Model.ReportQuery.LocationId).ToList();
+        }
+        if (Model.ReportQuery.VendorTypeId != -1)
+        {
+            //vendors = vendors.Where(v => v.VendorTypeId == Model.ReportQuery.VendorTypeId).ToList();
+        }
+        if (Model.ReportQuery.VendorName != "All")
+        {
+            //vendors = vendors.Where(a => a.Name == Model.ReportQuery.VendorName).ToList();
+        }
+
+        foreach (var vendor in vendors)
+        {
+            List<VendorSalesReport> salesReports = vendor.VendorSalesReport
+                .Where(v => (v.Date >= Model.ReportQuery.StartDate) && (v.Date <= Model.ReportQuery.EndDate))
+                .OrderBy(v => v.Date).ToList();
+
+                @:<div>
+                    <h4>@vendor.Name</h4>
+
+                    var totalSales = new decimal();
+                    foreach (var salesReport in salesReports)
+                    {
+                        totalSales += salesReport.TotalSales;
+                    }
+                    <p>Total Sales: $@totalSales</p>
+
+                    var salesGoal = new decimal();
+                    foreach (var salesReport in salesReports)
+                    {
+                        salesGoal += salesReport.SalesGoal;
+                    }
+                    <p>Sales Goal: $@salesGoal.ToString("0.00")</p>
+
+                    var difference = (totalSales - salesGoal).ToString("0.00");
+                    <p>Difference: $@difference</p>
+                    var differencePercent = totalSales / salesGoal;
+                    <p>Average Difference: %@differencePercent.ToString("0.00")</p>
+
+                    var avgSales = (double)totalSales / Math.Ceiling( (salesReports.Last().Date - salesReports.First().Date).TotalDays + 1.0);
+                    <p>Average Sales: $@avgSales.ToString("0.00")</p>
+                @:</div>
+            }
+        @:</div>
+    }*@
